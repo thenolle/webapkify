@@ -32,27 +32,32 @@ function gatherLaunchRuntimePermissionRules(config: WebAPKifyConfig): RuntimePer
   return RUNTIME_PERMISSION_RULES.filter(rule => permissions[rule.key] === true)
 }
 
-function buildRuntimePermissionExpressions(rules: RuntimePermissionRule[]): string[] {
+function buildRuntimePermissionCode(rules: RuntimePermissionRule[]): string {
+  if (!rules.length) return ''
   return rules.map(rule => {
     const conditions: string[] = []
     if (rule.minSdk != null) conditions.push(`Build.VERSION.SDK_INT >= ${rule.minSdk}`)
     if (rule.maxSdk != null) conditions.push(`Build.VERSION.SDK_INT <= ${rule.maxSdk}`)
-    const gate = conditions.length ? `${conditions.join(' && ')} -> ` : ''
-    return `${gate}"${rule.manifestPermission}"`
-  })
+    if (!conditions.length) return `            add("${rule.manifestPermission}")`
+    return `            if (${conditions.join(' && ')}) add("${rule.manifestPermission}")`
+  }).join('\n')
 }
 
 export function writeMainActivity(config: WebAPKifyConfig, kotlinDir: string): void {
   const appId = config.appId
   const webview = config.webview!
   const runtimeRules = gatherLaunchRuntimePermissionRules(config)
-  const runtimePermissionExpressions = buildRuntimePermissionExpressions(runtimeRules)
-  const runtimePermissionsBlock = runtimePermissionExpressions.length ? runtimePermissionExpressions.map(line => `            ${line}`).join('\n') : ''
+  const runtimePermissionsCode = buildRuntimePermissionCode(runtimeRules)
   const cacheModeMap: Record<string, string> = {
     DEFAULT: 'WebSettings.LOAD_DEFAULT',
     CACHE_ELSE_NETWORK: 'WebSettings.LOAD_CACHE_ELSE_NETWORK',
     NO_CACHE: 'WebSettings.LOAD_NO_CACHE',
     CACHE_ONLY: 'WebSettings.LOAD_CACHE_ONLY',
+  }
+  const forceDarkModeMap: Record<NonNullable<NonNullable<WebAPKifyConfig['webview']>['forceDark']>, string> = {
+    OFF: 'WebSettingsCompat.FORCE_DARK_OFF',
+    ON: 'WebSettingsCompat.FORCE_DARK_ON',
+    AUTO: 'WebSettingsCompat.FORCE_DARK_AUTO',
   }
   const statusBarCode = (() => {
     if (config.statusBar === 'transparent') {
@@ -81,6 +86,14 @@ export function writeMainActivity(config: WebAPKifyConfig, kotlinDir: string): v
         }`
     : ''
   const uaLine = webview.userAgentString ? `        settings.userAgentString = "${escapeKotlinString(webview.userAgentString)}"` : '        // userAgentString: using system default'
+  const forceDarkLine = (() => {
+    const configured = webview.forceDark ?? 'AUTO'
+    const mode = forceDarkModeMap[configured]
+    return `
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+            WebSettingsCompat.setForceDark(settings, ${mode})
+        }`
+  })()
   const kotlin = `package ${appId}
 
 import android.annotation.SuppressLint
@@ -113,7 +126,7 @@ class MainActivity : AppCompatActivity() {
 
     private val runtimePermissions: List<String>
         get() = buildList {
-${runtimePermissionsBlock}
+${runtimePermissionsCode}
         }
 
     private val permissionLauncher = registerForActivityResult(
@@ -191,6 +204,7 @@ ${statusBarCode}${keepScreenOn}
         settings.setGeolocationEnabled(${bool(webview.geolocationEnabled)})
 ${geoClient}
 ${uaLine}
+${forceDarkLine}
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, ${bool(webview.algorithmicDarkeningAllowed)})
