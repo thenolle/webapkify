@@ -1,0 +1,14 @@
+import path from 'path'
+import fs from 'fs'
+import { log } from '../core/logger.js'
+
+export async function cleanCommand(): Promise<void> {
+  const directory = path.resolve(process.cwd(), 'webapkify')
+  if (!fs.existsSync(directory)) {
+    log.warn('Nothing to clean - ./webapkify/ does not exist.')
+    return
+  }
+  log.step('Removing ./webapkify/ ...')
+  fs.rmSync(directory, { recursive: true, force: true })
+  log.success('Cleaned ./webapkify/')
+}
