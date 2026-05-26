@@ -252,6 +252,8 @@ Build a release APK:
 webapkify build --release
 ```
 
+For more details about the config options, see the [Config guide](./CONFIG.md).
+
 ## Commands
 
 ### `webapkify init`
@@ -336,4 +338,4 @@ That makes it a strong fit for:
 
 ## License
 
-[MIT License](https://opensource.org/license/mit)
+[MIT License](./LICENSE)
